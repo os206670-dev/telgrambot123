@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# إعدادات السجلات
+# إعدادات السجلات لمراقبة أداء البوت
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # --- الإعدادات الأساسية ---
@@ -77,7 +77,7 @@ def load_data():
                 ACTIVE_LOANS = {int(uid): {**l, 'date': datetime.fromisoformat(l['date']), 'return_date': datetime.fromisoformat(l['return_date'])} for uid, l in raw_loans.items()}
         except: pass
 
-# --- المعالجات ---
+# --- المعالجات الرئيسية ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     load_data()
     user_id = update.effective_user.id
@@ -100,16 +100,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['step'] = 'CLASS'
     elif step == 'CLASS':
         context.user_data['student_class'] = text
-        await update.message.reply_text("📞 أرسل **رقم جوالك** المكون من 10 أرقام:")
+        await update.message.reply_text("📞 أرسل **رقم جوالك** للتواصل:")
         context.user_data['step'] = 'PHONE'
     elif step == 'PHONE':
-        if re.match(r'^\d{10}$', text.replace(' ', '')):
-            context.user_data['student_phone'] = text
-            kb = [[InlineKeyboardButton(cat, callback_data=f"cat_{cat}")] for cat in LIBRARY_DATA.keys()]
-            await update.message.reply_text("✅ **تم التسجيل بنجاح!**\nتفضل باختيار قسم الكتب الذي تود تصفحه:", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
-            context.user_data['step'] = 'DONE'
-        else:
-            await update.message.reply_text("❌ رقم الجوال غير صحيح، يرجى التأكد من كتابة 10 أرقام:")
+        context.user_data['student_phone'] = text
+        kb = [[InlineKeyboardButton(cat, callback_data=f"cat_{cat}")] for cat in LIBRARY_DATA.keys()]
+        await update.message.reply_text("✅ **تم التسجيل بنجاح!**\nتفضل باختيار قسم الكتب:", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+        context.user_data['step'] = 'DONE'
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -121,53 +118,51 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cat = data.split("_", 1)[1]
         context.user_data['current_cat'] = cat
         btns = [[InlineKeyboardButton(f"{'🔴' if b in BORROWED_BOOKS else '🟢'} {b}", callback_data=f"info_{b}")] for b in LIBRARY_DATA[cat].keys()]
-        btns.append([InlineKeyboardButton("🔙 العودة للأقسام الرئيسيّة", callback_data="back")])
-        await query.edit_message_text(f"📚 **كتب قسم: {cat}**\n(🔴 مستعار | 🟢 متاح)", reply_markup=InlineKeyboardMarkup(btns), parse_mode='Markdown')
+        btns.append([InlineKeyboardButton("🔙 العودة للأقسام", callback_data="back")])
+        await query.edit_message_text(f"📚 **كتب قسم: {cat}**", reply_markup=InlineKeyboardMarkup(btns), parse_mode='Markdown')
 
     elif data.startswith("info_"):
         book = data.split("_", 1)[1]
         cat = context.user_data.get('current_cat')
         desc = LIBRARY_DATA[cat][book]
-        status = "🔴 هذا الكتاب مستعار حالياً" if book in BORROWED_BOOKS else "🟢 الكتاب متاح للاستعارة"
-        kb = [[InlineKeyboardButton("✅ تأكيد طلب الاستعارة", callback_data=f"brw_{book}")]] if book not in BORROWED_BOOKS and user_id not in ACTIVE_LOANS else []
-        kb.append([InlineKeyboardButton("🔙 رجوع للقائمة", callback_data=f"cat_{cat}")])
-        await query.edit_message_text(f"📖 **اسم الكتاب:** {book}\n📌 **الحالة:** {status}\n\n📝 **وصف الكتاب:**\n{desc}", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+        kb = [[InlineKeyboardButton("✅ تأكيد الاستعارة", callback_data=f"brw_{book}")]] if book not in BORROWED_BOOKS and user_id not in ACTIVE_LOANS else []
+        kb.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"cat_{cat}")])
+        await query.edit_message_text(f"📖 **الكتاب:** {book}\n\n📝 **وصف الكتاب:**\n{desc}", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
 
     elif data.startswith("brw_"):
         book = data.split("_", 1)[1]
         now = datetime.now()
         ret_date = now + timedelta(days=7)
         BORROWED_BOOKS.add(book)
-        loan_info = {
-            'book': book,
-            'name': context.user_data.get('student_name'),
-            'class': context.user_data.get('student_class'),
-            'phone': context.user_data.get('student_phone'),
-            'date': now,
-            'return_date': ret_date
-        }
+        loan_info = {'book': book, 'name': context.user_data.get('student_name'), 'class': context.user_data.get('student_class'), 'phone': context.user_data.get('student_phone'), 'date': now, 'return_date': ret_date}
         ACTIVE_LOANS[user_id] = loan_info
         save_data()
-
-        await query.edit_message_text(f"🎉 **تمت عملية الاستعارة بنجاح!**\n\n📘 الكتاب: {book}\n📅 تاريخ الإرجاع: {format_date(ret_date)}\n\nنتمنى لك قراءة ممتعة!")
-        
-        # إرسال التقرير الكامل للإدارة
-        admin_report = (
-            f"🔔 **إشعار استعارة جديد**\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"👤 **الطالب:** {loan_info['name']}\n"
-            f"🏫 **الفصل:** {loan_info['class']}\n"
-            f"📞 **الجوال:** {loan_info['phone']}\n"
-            f"📚 **الكتاب:** {book}\n"
-            f"🗓 **تاريخ الاستعارة:** {format_date(now)}\n"
-            f"⌛ **موعد الإرجاع:** {format_date(ret_date)}\n"
-            f"━━━━━━━━━━━━━━"
-        )
+        await query.edit_message_text(f"🎉 **تمت الاستعارة بنجاح.**\n\n📘 الكتاب: {book}\n📅 الإرجاع: {format_date(ret_date)}")
+        admin_report = f"🔔 **إشعار استعارة جديد**\n━━━━━━━━━━━━━━\n👤 **الطالب:** {loan_info['name']}\n🏫 **الفصل:** {loan_info['class']}\n📞 **الجوال:** {loan_info['phone']}\n📚 **الكتاب:** {book}\n🗓 **التاريخ:** {format_date(now)}\n⌛ **موعد الإرجاع:** {format_date(ret_date)}\n━━━━━━━━━━━━━━"
         await context.bot.send_message(chat_id=ADMIN_GROUP_ID, text=admin_report, parse_mode='Markdown')
+
+    elif data == "req_ret":
+        loan = ACTIVE_LOANS.get(user_id)
+        if loan:
+            kb = [[InlineKeyboardButton("✅ تأكيد استلام الكتاب", callback_data=f"conf_ret_{user_id}")]]
+            admin_msg = f"📥 **طلب إرجاع كتاب:**\n\n👤 **الطالب:** {loan['name']}\n📚 **الكتاب:** {loan['book']}\n📞 **الجوال:** {loan['phone']}\n\nاضغط للتأكيد بعد الاستلام:"
+            await context.bot.send_message(chat_id=ADMIN_GROUP_ID, text=admin_msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+            await query.edit_message_text("⏳ **تم إرسال طلبك.** يرجى تسليم الكتاب للمكتبة لتأكيد الإرجاع.")
+
+    elif data.startswith("conf_ret_"):
+        uid = int(data.split("_")[2])
+        if uid in ACTIVE_LOANS:
+            book_name = ACTIVE_LOANS[uid]['book']
+            BORROWED_BOOKS.discard(book_name)
+            del ACTIVE_LOANS[uid]
+            save_data()
+            await query.edit_message_text(f"✅ تم تأكيد استلام ({book_name}) بنجاح.")
+            try: await context.bot.send_message(chat_id=uid, text=f"✨ تم تأكيد إرجاع كتاب **({book_name})** بنجاح.")
+            except: pass
 
     elif data == "back":
         kb = [[InlineKeyboardButton(cat, callback_data=f"cat_{cat}")] for cat in LIBRARY_DATA.keys()]
-        await query.edit_message_text("📂 **أقسام المكتبة المتاحة:**", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+        await query.edit_message_text("📂 **أقسام المكتبة:**", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
 
 def main():
     load_data()
