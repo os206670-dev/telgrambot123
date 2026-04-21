@@ -6,10 +6,8 @@ from datetime import datetime, timedelta
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# إعدادات التسجيل (Logging) لضمان مراقبة أداء البوت على Render
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# --- جلب التوكن من إعدادات السيرفر (Render) ---
 TOKEN = os.getenv('BOT_TOKEN') 
 ADMIN_GROUP_ID = -1003983944808 
 DATA_FILE = "library_storage.json"
@@ -17,7 +15,6 @@ DATA_FILE = "library_storage.json"
 BORROWED_BOOKS = set()
 ACTIVE_LOANS = {}
 
-# بيانات المكتبة (المحتوى)
 LIBRARY_DATA = {
     'تطوير الذات والإدارة': {
         'لا تحزن (لا تخزن)': 'نصائح لمواجهة الهموم والقلق والتركيز على الجانب الإيماني.',
@@ -51,7 +48,6 @@ LIBRARY_DATA = {
     }
 }
 
-# --- إدارة البيانات ---
 def save_data():
     serializable_loans = {}
     for uid, loan in ACTIVE_LOANS.items():
@@ -82,7 +78,6 @@ def adjust_for_weekend(dt):
     if dt.weekday() == 5: return dt + timedelta(days=1)
     return dt
 
-# --- معالجة الأوامر ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     load_data()
     user_id = update.effective_user.id
@@ -145,7 +140,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("terms_"):
         book = data.split("_", 1)[1]
-        kb = [[InlineKeyboardButton("✅ أوافق"، callback_data=f"brw_{book}")], [InlineKeyboardButton("❌ إلغاء", callback_data="back_to_cats")]]
+        kb = [[InlineKeyboardButton("✅ أوافق", callback_data=f"brw_{book}")], [InlineKeyboardButton("❌ إلغاء", callback_data="back_to_cats")]]
         await query.edit_message_text(f"⚠️ **شروط الاستعارة:**\n\n1- الحفاظ على نظافة الكتاب.\n2- الإرجاع في الموعد المحدد.\n\nهل توافق على استعارة ({book})؟", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
 
     elif data.startswith("brw_"):
@@ -161,7 +156,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "req_ret":
         loan = ACTIVE_LOANS.get(user_id)
         if loan:
-            kb = [[InlineKeyboardButton("✅ تم الاستلام"، callback_data=f"conf_{user_id}")]]
+            kb = [[InlineKeyboardButton("✅ تم الاستلام", callback_data=f"conf_{user_id}")]]
             await context.bot.send_message(chat_id=ADMIN_GROUP_ID, text=f"📥 طلب إرجاع: {loan['name']} - {loan['book']}", reply_markup=InlineKeyboardMarkup(kb))
             await query.edit_message_text("⏳ تم إرسال الطلب. يرجى تسليم الكتاب للمكتبة.")
 
@@ -180,15 +175,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = [[InlineKeyboardButton(cat, callback_data=f"cat_{cat}")] for cat in LIBRARY_DATA.keys()]
         await query.edit_message_text("اختر القسم:", reply_markup=InlineKeyboardMarkup(kb))
 
-# --- التشغيل ---
 def main():
     load_data()
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(handle_callback))
-    
-    # التشغيل بنظام Polling (مناسب لـ Render Background Worker)
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
