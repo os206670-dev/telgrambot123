@@ -10,7 +10,6 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # --- الإعدادات الأساسية ---
-# تأكد أن التوكن صحيح هنا
 TOKEN = "8254293210:AAFuREZZ4vVneXRs3i3A4K_pwdzH7qdQhHQ"
 ADMIN_GROUP_ID = -1003983944808 
 DATA_FILE = "library_storage.json"
@@ -18,20 +17,41 @@ DATA_FILE = "library_storage.json"
 BORROWED_BOOKS = set()
 ACTIVE_LOANS = {}
 
-# بيانات المكتبة (يمكنك إضافة المزيد هنا)
+# --- قاعدة بيانات الكتب الكاملة ---
 LIBRARY_DATA = {
     'تطوير الذات والإدارة': {
         'لا تحزن (لا تخزن)': 'نصائح لمواجهة الهموم والقلق والتركيز على الجانب الإيماني.',
         'مشوار الإصرار والتحدي': 'قصص ومواقف تحفزك على التمسك بأهدافك رغم الصعوبات.',
-        'ركز': 'تعلم كيف تبتعد عن المشتتات وتوجه انتباهك الكامل لمهمة واحدة.'
+        'ركز': 'تعلم كيف تبتعد عن المشتتات وتوجه انتباهك الكامل لمهمة واحدة لتنجزها بإتقان.',
+        'أول قاعدتين بالقيادة': 'يشرح أهم صفتين يجب أن تتوفر في القائد: كن قدوة، واهتم بفريقك.',
+        'عندما تكون ناجياً ومحباً': 'يتحدث عن النجاح المتوازن الذي يجمع بين الإنجاز والراحة النفسية.'
     },
     'سلسلة آفاق العلمية': {
         'الطاقة المتجددة': 'يشرح كيف نستخرج الكهرباء من الشمس والرياح والماء.',
-        'القوة المحركة': 'يتحدث عن المحركات والآلات وكيف تتحول الطاقة إلى حركة.'
+        'القوة المحركة': 'يتحدث عن المحركات والآلات وكيف تتحول الطاقة إلى حركة.',
+        'الأبنية': 'يشرح هندسة البناء من البيوت البسيطة إلى ناطحات السحاب.',
+        'الزلازل والبراكين': 'معلومات عن أسباب اهتزاز الأرض وانفجار الحمم من باطنها.',
+        'الحرائق والفيضانات': 'يتناول أخطار الطبيعة وكيفية مواجهتها والحد من أضرارها.'
+    },
+    'العلوم الشرعية والتاريخ': {
+        'السيرة النبوية': 'قصة حياة الرسول ﷺ منذ ولادته حتى وفاته بأسلوب تاريخي ممتع.',
+        'الصحيح': 'مرجع للأحاديث النبوية الصحيحة التي وردت عن النبي ﷺ.',
+        'تفسير العشر الأخير': 'شرح ميسر وبسيط لمعاني سور القرآن الكريم في الأجزاء الأخيرة.',
+        'الفرح بالقرآن': 'يتحدث عن الراحة النفسية والإيمانية التي نجدها في تدبر القرآن.',
+        'رجال من التاريخ': 'قصص مشوقة عن شخصيات عظيمة أثرت في التاريخ الإسلامي.',
+        'كيف تعالج مريضك بالرقية': 'دليل حول الآيات والأدعية الشرعية الصحيحة للرقية.'
+    },
+    'روايات وكتب أدبية ومنهجية': {
+        'آفاق بلا حدود': 'كتاب يوسع مداركك حول طموح الإنسان وقدراته غير المحدودة.',
+        'اللوحة القتالية': 'عمل أدبي متميز يتناول التحديات بأسلوب درامي مشوق.',
+        'عندما تكون الغربة أوطاناً': 'خواطر ومشاعر حول البحث عن الانتماء السلام الداخلي.',
+        'قفص الموت الغامض': 'رواية إثارة وغموض تتطلب ذكاءً وتركيزاً لحل لغزها.',
+        'إلى الظل': 'يتناول البحث عن الهدوء والسكينة بعيداً عن ضجيج الحياة.',
+        'قواعد البحث العلمي': 'دليل تعليمي للخطوات الصحيحة لكتابة البحوث المدرسية المنظمة.'
     }
 }
 
-# --- وظائف مساعدة ---
+# --- وظائف إدارة البيانات ---
 def format_date(dt):
     days = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"]
     return f"{days[dt.weekday()]} {dt.strftime('%Y/%m/%d')}"
@@ -57,16 +77,16 @@ def load_data():
                 ACTIVE_LOANS = {int(uid): {**l, 'date': datetime.fromisoformat(l['date']), 'return_date': datetime.fromisoformat(l['return_date'])} for uid, l in raw_loans.items()}
         except: pass
 
-# --- المعالجات الرئيسية ---
+# --- المعالجات ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     load_data()
     user_id = update.effective_user.id
     if user_id in ACTIVE_LOANS:
         loan = ACTIVE_LOANS[user_id]
-        kb = [[InlineKeyboardButton("📥 طلب إرجاع الكتاب", callback_data="req_ret")]]
-        await update.message.reply_text(f"📍 **أهلاً بك مجدداً!**\n\nأنت تستعير حالياً: **{loan['book']}**\n📅 موعد الإرجاع: {format_date(loan['return_date'])}", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+        kb = [[InlineKeyboardButton("📥 طلب إرجاع الكتاب الآن", callback_data="req_ret")]]
+        await update.message.reply_text(f"📍 **أهلاً بك مجدداً!**\n\nأنت تستعير حالياً: **{loan['book']}**\n📅 موعد الإرجاع النهائي: {format_date(loan['return_date'])}", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
         return
-    await update.message.reply_text("✨ **مرحباً بك في نظام استعارة الكتب**\n\nلبدء الاستخدام، يرجى كتابة **اسمك الثلاثي**:")
+    await update.message.reply_text("✨ **مرحباً بك في مكتبة ابن العميد الرقمية**\n\nيرجى كتابة **اسمك الثلاثي** للتسجيل في النظام:")
     context.user_data['step'] = 'NAME'
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -80,13 +100,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['step'] = 'CLASS'
     elif step == 'CLASS':
         context.user_data['student_class'] = text
-        await update.message.reply_text("📞 أرسل **رقم جوالك** للتواصل:")
+        await update.message.reply_text("📞 أرسل **رقم جوالك** المكون من 10 أرقام:")
         context.user_data['step'] = 'PHONE'
     elif step == 'PHONE':
-        context.user_data['student_phone'] = text
-        kb = [[InlineKeyboardButton(cat, callback_data=f"cat_{cat}")] for cat in LIBRARY_DATA.keys()]
-        await update.message.reply_text("✅ **تم التسجيل بنجاح!**\nتفضل باختيار قسم الكتب الذي تود تصفحه:", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
-        context.user_data['step'] = 'DONE'
+        if re.match(r'^\d{10}$', text.replace(' ', '')):
+            context.user_data['student_phone'] = text
+            kb = [[InlineKeyboardButton(cat, callback_data=f"cat_{cat}")] for cat in LIBRARY_DATA.keys()]
+            await update.message.reply_text("✅ **تم التسجيل بنجاح!**\nتفضل باختيار قسم الكتب الذي تود تصفحه:", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+            context.user_data['step'] = 'DONE'
+        else:
+            await update.message.reply_text("❌ رقم الجوال غير صحيح، يرجى التأكد من كتابة 10 أرقام:")
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -98,23 +121,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cat = data.split("_", 1)[1]
         context.user_data['current_cat'] = cat
         btns = [[InlineKeyboardButton(f"{'🔴' if b in BORROWED_BOOKS else '🟢'} {b}", callback_data=f"info_{b}")] for b in LIBRARY_DATA[cat].keys()]
-        btns.append([InlineKeyboardButton("🔙 العودة للأقسام", callback_data="back")])
-        await query.edit_message_text(f"📚 **كتب قسم: {cat}**", reply_markup=InlineKeyboardMarkup(btns), parse_mode='Markdown')
+        btns.append([InlineKeyboardButton("🔙 العودة للأقسام الرئيسيّة", callback_data="back")])
+        await query.edit_message_text(f"📚 **كتب قسم: {cat}**\n(🔴 مستعار | 🟢 متاح)", reply_markup=InlineKeyboardMarkup(btns), parse_mode='Markdown')
 
     elif data.startswith("info_"):
         book = data.split("_", 1)[1]
         cat = context.user_data.get('current_cat')
         desc = LIBRARY_DATA[cat][book]
-        status = "🔴 مستعار حالياً" if book in BORROWED_BOOKS else "🟢 متاح للاستعارة"
-        kb = [[InlineKeyboardButton("✅ تأكيد الاستعارة", callback_data=f"brw_{book}")]] if book not in BORROWED_BOOKS and user_id not in ACTIVE_LOANS else []
-        kb.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"cat_{cat}")])
-        await query.edit_message_text(f"📖 **الكتاب:** {book}\n📌 **الحالة:** {status}\n\n📝 **عن الكتاب:**\n{desc}", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+        status = "🔴 هذا الكتاب مستعار حالياً" if book in BORROWED_BOOKS else "🟢 الكتاب متاح للاستعارة"
+        kb = [[InlineKeyboardButton("✅ تأكيد طلب الاستعارة", callback_data=f"brw_{book}")]] if book not in BORROWED_BOOKS and user_id not in ACTIVE_LOANS else []
+        kb.append([InlineKeyboardButton("🔙 رجوع للقائمة", callback_data=f"cat_{cat}")])
+        await query.edit_message_text(f"📖 **اسم الكتاب:** {book}\n📌 **الحالة:** {status}\n\n📝 **وصف الكتاب:**\n{desc}", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
 
     elif data.startswith("brw_"):
         book = data.split("_", 1)[1]
         now = datetime.now()
-        ret_date = now + timedelta(days=7) # مدة الاستعارة 7 أيام
-        
+        ret_date = now + timedelta(days=7)
         BORROWED_BOOKS.add(book)
         loan_info = {
             'book': book,
@@ -127,26 +149,26 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ACTIVE_LOANS[user_id] = loan_info
         save_data()
 
-        # رسالة للطالب
-        await query.edit_message_text(f"🎉 **مبروك! تمت الاستعارة بنجاح.**\n\n📘 الكتاب: {book}\n📅 تاريخ الإرجاع: {format_date(ret_date)}")
+        await query.edit_message_text(f"🎉 **تمت عملية الاستعارة بنجاح!**\n\n📘 الكتاب: {book}\n📅 تاريخ الإرجاع: {format_date(ret_date)}\n\nنتمنى لك قراءة ممتعة!")
         
-        # رسالة للإدارة (لوحة التحكم)
-        admin_msg = (
-            f"🔔 **عملية استعارة جديدة:**\n\n"
+        # إرسال التقرير الكامل للإدارة
+        admin_report = (
+            f"🔔 **إشعار استعارة جديد**\n"
+            f"━━━━━━━━━━━━━━\n"
             f"👤 **الطالب:** {loan_info['name']}\n"
             f"🏫 **الفصل:** {loan_info['class']}\n"
             f"📞 **الجوال:** {loan_info['phone']}\n"
             f"📚 **الكتاب:** {book}\n"
             f"🗓 **تاريخ الاستعارة:** {format_date(now)}\n"
-            f"⌛ **موعد الإرجاع:** {format_date(ret_date)}"
+            f"⌛ **موعد الإرجاع:** {format_date(ret_date)}\n"
+            f"━━━━━━━━━━━━━━"
         )
-        await context.bot.send_message(chat_id=ADMIN_GROUP_ID, text=admin_msg, parse_mode='Markdown')
+        await context.bot.send_message(chat_id=ADMIN_GROUP_ID, text=admin_report, parse_mode='Markdown')
 
     elif data == "back":
         kb = [[InlineKeyboardButton(cat, callback_data=f"cat_{cat}")] for cat in LIBRARY_DATA.keys()]
-        await query.edit_message_text("📂 **اختر القسم:**", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+        await query.edit_message_text("📂 **أقسام المكتبة المتاحة:**", reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
 
-# --- تشغيل البوت ---
 def main():
     load_data()
     application = Application.builder().token(TOKEN).build()
