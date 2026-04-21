@@ -8,7 +8,8 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-TOKEN = os.getenv('BOT_TOKEN') 
+# امسح سطر os.getenv وضع التوكن مباشرة بين علامتي تنصيص
+TOKEN = "8254293210:AAFuREZZ4vVneXRs3i3A4K_pwdzH7qdQhHQ"
 ADMIN_GROUP_ID = -1003983944808 
 DATA_FILE = "library_storage.json"
 
