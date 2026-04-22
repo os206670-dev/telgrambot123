@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # --- 1. سيرفر Flask لإبقاء البوت حياً (لـ Render Web Service) ---
@@ -109,18 +109,30 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     step = context.user_data.get('step')
     if not step: return
     text = update.message.text.strip()
+    
     if step == 'NAME':
         context.user_data['student_name'] = text
         await update.message.reply_text(f"مرحباً {text}، أرسل **فصلك**:")
         context.user_data['step'] = 'CLASS'
+        
     elif step == 'CLASS':
         context.user_data['student_class'] = text
-        await update.message.reply_text("📞 أرسل **رقم جوالك**:")
+        # طلب رقم الجوال عبر زر مشاركة جهة الاتصال
+        contact_btn = KeyboardButton(text="📱 مشاركة رقم الجوال الخاص بي", request_contact=True)
+        reply_markup = ReplyKeyboardMarkup([[contact_btn]], one_time_keyboard=True, resize_keyboard=True)
+        await update.message.reply_text("📞 الخطوة الأخيرة: يرجى الضغط على الزر أدناه لمشاركة رقم جوالك:", reply_markup=reply_markup)
         context.user_data['step'] = 'PHONE'
-    elif step == 'PHONE':
-        context.user_data['student_phone'] = text
+
+async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get('step') == 'PHONE':
+        contact = update.message.contact
+        context.user_data['student_phone'] = contact.phone_number
+        
+        # إظهار الأقسام بعد استلام الرقم
         kb = [[InlineKeyboardButton(cat, callback_data=f"cat_{cat}")] for cat in LIBRARY_DATA.keys()]
-        await update.message.reply_text("✅ تم التسجيل! اختر القسم:", reply_markup=InlineKeyboardMarkup(kb))
+        await update.message.reply_text("✅ تم التسجيل بنجاح!", reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text("📂 اختر القسم الذي تريد التصفح فيه:", reply_markup=InlineKeyboardMarkup(kb))
+        context.user_data['step'] = None
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -184,6 +196,7 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(MessageHandler(filters.CONTACT, handle_contact)) # معالج رقم الجوال
     app.add_handler(CallbackQueryHandler(handle_callback))
     
     print("البوت بدأ العمل...")
